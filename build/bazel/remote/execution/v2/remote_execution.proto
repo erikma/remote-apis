@@ -1346,7 +1346,7 @@ message GetPotentialActionResultsRequest {
 // [ActionCache.GetPotentialActionResults][build.bazel.remote.execution.v2.ActionCache.GetPotentialActionResults].
 message GetPotentialActionResultsResponse {
   // A set of possible matches to the client filesystem along with a reference to build outputs.
-  repeated PathsetAndStrongFingerprint potential_action_matches = 1;
+  repeated ObservedPathSetAndStrongFingerprint potential_action_matches = 1;
 
   // If present, signifies that there are more results which the client can
   // retrieve by passing this as the page_token in a subsequent
@@ -1355,19 +1355,72 @@ message GetPotentialActionResultsResponse {
   string next_page_token = 2;
 }
 
+message ExecutionStage {
+  enum Value {
+    // Invalid value.
+    UNKNOWN = 0;
+
+    // Checking the result against the cache.
+    CACHE_CHECK = 1;
+
+    // Currently idle, awaiting a free machine to execute.
+    QUEUED = 2;
+
+    // Currently being executed by a worker.
+    EXECUTING = 3;
+
+    // Finished execution.
+    COMPLETED = 4;
+  }
+}
+
+
+// An individual file or directory access observed during execution of
+// an [Action][build.bazel.remote.execution.v2.Action]. An ordered set of
+// these is encompassed in an
+// [ObservedPathSet][build.bazel.remote.execution.v2.ObservedPathSet]
+// for replay against the client filesystem when searching amongst
+// strong fingerprints matching a weak fingerprint.
+message ObservedPathEntry {
+  enum Flags {
+    NONE = 0x00,
+
+    SEARCH_PATH = 0x01,
+
+    DIRECTORY_PATH = 0x02,
+
+    DIRECTORY_ENUMERATION = 0x04,
+    
+    DIRECTORY_ENUMERATION_WITH_CUSTOM_PATTERN = 0x08,
+
+    DIRECTORY_ENUMERATION_WITH_ALL_PATTERN = 0x10,
+
+    FILE_PROBE = 0x20,
+  }
+
+  Flags flags = 1;
+
+
+
+  //erik:  
+}
+
 // The ordered filesystem directory and file probes and file hashes to be used to
 // compare to the client filesystem when seeking a match from a weak fingerprint
-// formed from potentially incomplete (underspecified) inputs. In the presence of
-// complete inputs a weak fingerprint is functionally the same as a normal
-// [Action][build.bazel.remote.execution.v2.Action]
-message Pathset {
-
+// formed from potentially incomplete (underspecified) inputs to a set of build outputs.
+// Pathsets are ordered to handle cases like path searches for files and file wildcards
+// used in tools like C++, to avoid 
+// O
+message ObservedPathSet {
+//erik:  
 }
+//erik: Need description of how to form a weak fingerprint, what the minimum fingerprint case is,
+// how additional inputs added to fingerprint "focus" the results.
 
 // Represents a two-phase cache pathset reference or inlined copy along with the
 // strong fingerprint that can be used to retrieve build outputs if the pathset
 // matches the client's filesystem.
-message PathsetAndStrongFingerprint {
+message ObservedPathSetAndStrongFingerprint {
   // The digest for a blob containing the pathset, which can be retrieved from the
   // [ContentAddressableStorage][build.bazel.remote.execution.v2.ContentAddressableStorage].
   // Servers SHOULD increase the TTL of the referenced blob if necessary and
@@ -1378,12 +1431,12 @@ message PathsetAndStrongFingerprint {
   // the client in the [GetPotentialActionResultsRequest][build.bazel.remote.execution.v2.GetPotentialActionResultsRequest]
   // message. The server MAY omit inlining, even if requested, and MUST do so if inlining
   // would cause the response to exceed message size limits.
-  Pathset pathset = 2;
+  bytes pathset = 2;
 
   // The strong fingerprint digest of the [Action][build.bazel.remote.execution.v2.Action]
   // to retrieve from [ActionCache.GetActionResult][build.bazel.remote.execution.v2.ActionCache.GetActionResult]
   // if the pathset above matches the client filesystem.
-  Digest action_digest = 2;
+  Digest action_digest = 3;
 }
 
 // A request message for
