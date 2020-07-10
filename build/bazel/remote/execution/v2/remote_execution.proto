@@ -1374,16 +1374,7 @@ message ExecutionStage {
   }
 }
 
-message ObservedPathEntry {
-  enum Flags {
-  }
-
-  Flags flags = 1;
-
-
-
-  //erik:  
-}
+erik: TODO: Define the chain from WeakFingerprint -> selectors -> ActionResult - is there a missing part?
 
 // The ordered file reads and probes, and directory enumerations, used to
 // compare to the client filesystem when seeking a match from a weak fingerprint
@@ -1392,45 +1383,70 @@ message ObservedPathEntry {
 // When performing a comparison for a Two-Phase Cache lookup, a corresponding
 // prospective strong fingerprint is initialized. Each entry is examined
 // against the filesystem, and depending on the outcome of the comparison,
-// new hash information is added to the prospective strong fingerprint. At the end of
-// pathset enumeration the prospective strong fingerprint is compared to the
-// strong fingerprint provided in the cache selector and if they match, this is a
-// cache hit, and the resulting [ActionResult][build.bazel.remote.execution.v2.ActionResult]
-// should be retrieved and used.
+// new hash information may be added to the prospective strong fingerprint.
+// At the end of pathset enumeration the prospective strong fingerprint is
+// compared to the strong fingerprint provided in the two-phase cache selector
+// and if they match, this is a cache hit, and the resulting
+// [ActionResult][build.bazel.remote.execution.v2.ActionResult] should be retrieved
+// and used.
+//
+// Generating a directory hash: Create a list of the names of directory members
+// (files and directories) that pass the directory enumeration or OberservedAccessFileNames
+// filters. Lexicographically sort the names by code point or, equivalently, by the UTF-8
+// bytes. Join the sorted strings together with the ',' character to form a comma-delimited list;
+// note for a multi-member list this means that there is no tail ',', e.g. for
+// a.h and b.h the list string is "a.h,b.h". Convert this string to uppercase.
+// Hash the UTF-8 string bytes.
+//
+// Discussion of how to generate pathsets from action execution filesystem traces can be
+// found at
+// https://github.com/microsoft/BuildXL/blob/master/Documentation/Wiki/Advanced-Features/Search-Path-Enumeration.md .
 message ObservedPathSet
 {
   // An individual file or directory access observed during execution of
   // an [Action][build.bazel.remote.execution.v2.Action].
   message Entry
   {
-    // Operation kind. These are flag bits that can be combined in various combinations.
+    // Operation kind.
     enum OpKind
     {
       // A file path was read. If the file is not present, this pathset does not match the filesystem.
-      // Otherwise the hash of the file should be added to the prospective strong fingerprint.
+      // Otherwise the hash of the string constant "R" followed by the hash of the file must be added
+      // to the prospective strong fingerprint.
       FILE_READ = 0;
 
       // 'Path' is a directory that was enumerated by the action using DirectorySearchPattern.
-      // A hash of the directory contents with the search pattern applied must be added to
-      // the proposective strong fingerprint.
-      // If the directory is missing *** TODO erik:
+      // If the directory is missing, this pathset does not match the filesystem.
+      // Otherwise the hash of the string constant "E" followed by the hash of the directory
+      // contents with the search pattern applied must be added to the proposective strong fingerprint.
+      // See comments on
+      // [ObservedPathSet][build.bazel.remote.execution.v2.ObservedPathSet] for how to generate a
+      // directory hash.
       DIRECTORY_ENUMERATION = 1;
 
-      // 'Path' is a directory that was enumerated by the action. A hash of the directory contents
-      // filtered to only the file names in ObservedAccessFileNames must be added to the prospective
-      // string fingerprint.
+      // 'Path' is a directory that was enumerated by the action. If the directory is missing,
+      // this pathset does not match the filesystem. Otherwise the hash of the string constant "E"
+      // followed by a hash of the directory contents filtered to only the file names in
+      // ObservedAccessFileNames (compared to only the directory filenames without extensions)
+      // must be added to the prospective strong fingerprint. See comments on
+      // [ObservedPathSet][build.bazel.remote.execution.v2.ObservedPathSet] for how to generate a
+      // directory hash.
       DIRECTORY_SEARCH = 2;
 
-      // 'Path' is a file or directory probed by the action that was present during execution.
-      // The file or directory was not otherwise read or enumerated.
-      // If the file or directory is not present, this pathset does not match the filesystem.
-      // Otherwise no change to the prospective strong fingerprint should be made.
-      FILE_OR_DIRECTORY_PROBE = 3;
+      // 'Path' is a file probed, but not read, by the action and that was present during execution.
+      // If the file is not present, or is instead a directory, this pathset does not match the filesystem.
+      // Otherwise the hash of the string constant "F" must be added to the prospective strong fingerprint.
+      EXISTING_FILE_PROBE = 3;
+
+      // 'Path' is a directory probed, but not enumerated, by the action and that was present during execution.
+      // If the directory is not present, or is instead a file, this pathset does not match the filesystem.
+      // Otherwise the hash of the string constant "D" must be added to the prospective strong fingerprint.
+      EXISTING_DIRECTORY_PROBE = 4;
 
       // 'Path' is a file or directory probed by the action that was not present during execution.
-      // If the file or directory is present, this pathset does not match the filesystem.
-      // Otherwise no change to the prospective strong fingerprint should be made.
-      ABSENT_FILE_OR_DIRECTORY_PROBE = 4;
+      // If path is present as a file or directory, this pathset does not match the filesystem.
+      // Otherwise the hash of the string constant "P" must be added to the prospective strong fingerprint.
+      ABSENT_FILE_OR_DIRECTORY_PROBE = 5;
     }
 
     // File or directory path.
@@ -1439,8 +1455,8 @@ message ObservedPathSet
     // Defines the meaning of Path and how to compare to the local filesystem.
     OpKind Kind = 2;
 
-    // For directory comparisons, the enumeration pattern used. When null/empty/missing the search
-    // pattern was "*" meaning the full directory.
+    // For entries of OpType.DIRECTORY_ENUMERATION, the enumeration pattern used.
+    // When null/empty/missing the search pattern was "*" meaning the full directory.
     string DirectorySearchPattern = 3;
   }
 
@@ -1449,9 +1465,9 @@ message ObservedPathSet
   // bytes).
   repeated Entry Entries = 1;
 
-  // For directory comparisons in Entries marked with OpKind.DIRECTORY_SEARCH, defines the filenames
-  // that were read by the command to be used as the filter for generating a directory hash
-  // to add to the prospective strong fingerprint.
+  // For directory comparisons in Entries marked with OpKind.DIRECTORY_SEARCH, defines the filenames,
+  // with extensions removed, that were read by the action. These are used as the filter for generating
+  // a directory hash to add to the prospective strong fingerprint.
   repeated string ObservedAccessedFileNames = 2;
 }
 
