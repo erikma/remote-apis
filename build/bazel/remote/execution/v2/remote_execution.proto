@@ -1317,18 +1317,32 @@ message GetPotentialActionResultsRequest {
   // omitted.
   string instance_name = 1;
 
-  // The weak fingerprint key for the lookup. A weak fingerprint can match to zero or more
-  // (pathset, strong fingerprint) pairs. If a pathset is replayed at the client and matches
-  // the client filesystem, the strong fingerprint can then be used with
-  // [ActionCache.GetActionResult][build.bazel.remote.execution.v2.ActionCache.GetActionResult]
-  // to get specific build outputs.
-  Digest weak_fingerprint_digest = 2;
+  // The hash of an [Action][build.bazel.remote.execution.v2.Action] that acts as a weak fingerprint
+  // key to look up potential action results that must be compared to the client's current filesystem
+  // contents to get a match. On a match, the corresponding build outputs in the form of an
+  // [ActionResult][build.bazel.remote.execution.v2.ActionResult] can be retrieved from
+  // [ActionCache.GetActionResult][build.bazel.remote.execution.v2.ActionCache.GetActionResult].
+  //
+  // In two-phase caching an `Action` contains a normal reference to a
+  // [Command][build.bazel.remote.execution.v2.Command] but the `input_root_digest`
+  // can refer to a subset of the files that are predicted to be needed to run the `Action`.
+  // The input root can contain all files needed for the command, in which case the weak
+  // fingerprint should lead to just one output (or none if there are no cache hits).
+  // When the input root contains fewer files than those actually needed by the action,
+  // the weak fingerprint gets less specific, and the number of possible matches grows.
+  // It's possible for the input root to contain zero files, which is a very weak
+  // fingerprint as it can match any output that matches the `Command`.
+  // Less-specific weak fingerprints lead to more I/O and time spent matching pathsets against
+  // the client filesystem; adding in any predictions about the filesystem "focuses"
+  // the lookup to more-sepcific results.
+  Digest weak_fingerprint_action_digest = 2;
 
   // A hint to the server to request inlining pathsets in the
-  // [GetPotentialActionResultsResponse][build.bazel.remote.execution.v2.GetPotentialActionResultsResponse] message.
+  // [GetPotentialActionResultsResponse][build.bazel.remote.execution.v2.GetPotentialActionResultsResponse]
+  // message.
   bool inline_pathsets = 3;
 
-  // A maximum page size to request. If present, the server will request no more
+  // A maximum page size to request. If present, the server will respond with no more
   // than this many items. Regardless of whether a page size is specified, the
   // server may place its own limit on the number of items to be returned and
   // require the client to retrieve more items using a subsequent request.
@@ -1373,8 +1387,6 @@ message ExecutionStage {
     COMPLETED = 4;
   }
 }
-
-erik: TODO: Define the chain from WeakFingerprint -> selectors -> ActionResult - is there a missing part?
 
 // The ordered file reads and probes, and directory enumerations, used to
 // compare to the client filesystem when seeking a match from a weak fingerprint
@@ -1471,8 +1483,7 @@ message ObservedPathSet
   repeated string ObservedAccessedFileNames = 2;
 }
 
-//erik: Need description of how to form a weak fingerprint, what the minimum fingerprint case is,
-// how additional inputs added to fingerprint "focus" the results.
+erik: TODO: Define the chain from WeakFingerprint -> selectors -> ActionResult - is there a missing part?
 
 // Represents a two-phase cache pathset, referenced or inlined, with the strong fingerprint
 // that can be used to retrieve build outputs if the pathset matches the client's filesystem.
@@ -1488,6 +1499,9 @@ message ObservedPathSetAndStrongFingerprint {
   // message. The server MAY omit inlining, even if requested, and MUST do so if inlining
   // would cause the response to exceed message size limits.
   bytes pathset = 2;
+
+  // TODO: erik: We need file hashes here as observed inputs.
+  // TODO: erik: Is this format sufficient and does it match the needs of the build outputs?
 
   // The strong fingerprint digest of the [Action][build.bazel.remote.execution.v2.Action]
   // to retrieve from [ActionCache.GetActionResult][build.bazel.remote.execution.v2.ActionCache.GetActionResult]
@@ -1656,7 +1670,7 @@ message GetTreeRequest {
   // [ContentAddressableStorage][build.bazel.remote.execution.v2.ContentAddressableStorage].
   Digest root_digest = 2;
 
-  // A maximum page size to request. If present, the server will request no more
+  // A maximum page size to request. If present, the server will respond with no more
   // than this many items. Regardless of whether a page size is specified, the
   // server may place its own limit on the number of items to be returned and
   // require the client to retrieve more items using a subsequent request.
