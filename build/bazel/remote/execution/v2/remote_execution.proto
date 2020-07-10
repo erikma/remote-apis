@@ -108,6 +108,9 @@ service Execution {
     option (google.api.http) = { post: "/v2/{instance_name=**}/actions:execute" body: "*" };
   }
 
+  // TODO: erik: Fill in.
+  rpc ExecuteWithDynamicRetrieval()
+
   // Wait for an execution operation to complete. When the client initially
   // makes the request, the server immediately responds with the current status
   // of the execution. The server will leave the request stream open until the
@@ -755,6 +758,12 @@ message FileNode {
   string name = 1;
 
   // The digest of the file's content.
+  //
+  // If a virtual filesystem is in use for action execution, e.g. for use with dynamic
+  // file and directory retrieval in
+  // [ExecuteWithDynamicRetrieval][build.bazel.remote.execution.v2.Execution.ExecuteWithDynamicRetrieval],
+  // this digest is allowed to be empty/zero-length, meaning that this file is meant to fill the VFS
+  // view but was predicted as unlikely to be used by the action.
   Digest digest = 2;
 
   reserved 3; // Reserved to ensure wire-compatibility with `OutputFile`.
@@ -1395,9 +1404,10 @@ message ExecutionStage {
 // When performing a comparison for a Two-Phase Cache lookup, a corresponding
 // prospective strong fingerprint is initialized. Each entry is examined
 // against the filesystem, and depending on the outcome of the comparison,
-// new hash information may be added to the prospective strong fingerprint.
+// new hash information is added to the prospective strong fingerprint.
 // At the end of pathset enumeration the prospective strong fingerprint is
-// compared to the strong fingerprint provided in the two-phase cache selector
+// compared to the strong fingerprint provided in the two-phase cache lookup
+// (`strong_fingerprint_digest` in )
 // and if they match, this is a cache hit, and the resulting
 // [ActionResult][build.bazel.remote.execution.v2.ActionResult] should be retrieved
 // and used.
@@ -1422,12 +1432,13 @@ message ObservedPathSet
     // Operation kind.
     enum OpKind
     {
-      // A file path was read. If the file is not present, this pathset does not match the filesystem.
-      // Otherwise the hash of the string constant "R" followed by the hash of the file must be added
-      // to the prospective strong fingerprint.
+      // `Path` refers to a file that was read by the action. If the file is not present,
+      // this pathset does not match the filesystem. Otherwise the hash of the string
+      // constant "R" followed by the hash of the file must be added to the prospective
+      // strong fingerprint.
       FILE_READ = 0;
 
-      // 'Path' is a directory that was enumerated by the action using DirectorySearchPattern.
+      // `Path` is a directory that was enumerated by the action using `DirectorySearchPattern`.
       // If the directory is missing, this pathset does not match the filesystem.
       // Otherwise the hash of the string constant "E" followed by the hash of the directory
       // contents with the search pattern applied must be added to the proposective strong fingerprint.
@@ -1436,54 +1447,57 @@ message ObservedPathSet
       // directory hash.
       DIRECTORY_ENUMERATION = 1;
 
-      // 'Path' is a directory that was enumerated by the action. If the directory is missing,
+      // `Path` is a directory that was enumerated by the action. If the directory is missing,
       // this pathset does not match the filesystem. Otherwise the hash of the string constant "E"
       // followed by a hash of the directory contents filtered to only the file names in
-      // ObservedAccessFileNames (compared to only the directory filenames without extensions)
+      // ObservedAccessFileNames (compared to only the directory's filenames without extensions)
       // must be added to the prospective strong fingerprint. See comments on
       // [ObservedPathSet][build.bazel.remote.execution.v2.ObservedPathSet] for how to generate a
       // directory hash.
       DIRECTORY_SEARCH = 2;
 
-      // 'Path' is a file probed, but not read, by the action and that was present during execution.
-      // If the file is not present, or is instead a directory, this pathset does not match the filesystem.
-      // Otherwise the hash of the string constant "F" must be added to the prospective strong fingerprint.
+      // 'Path' is a file probed for existence, but not read, by the action and that was present
+      // during execution. If the file is not present or is instead a directory, this pathset
+      // does not match the filesystem. Otherwise the hash of the string constant "F" must be
+      // added to the prospective strong fingerprint.
       EXISTING_FILE_PROBE = 3;
 
-      // 'Path' is a directory probed, but not enumerated, by the action and that was present during execution.
-      // If the directory is not present, or is instead a file, this pathset does not match the filesystem.
-      // Otherwise the hash of the string constant "D" must be added to the prospective strong fingerprint.
+      // `Path` is a directory probed for existence, but not enumerated, by the action and that
+      // was present during execution. If the directory is not present, or is instead a file,
+      // this pathset does not match the filesystem. Otherwise the hash of the string constant "D"
+      // must be added to the prospective strong fingerprint.
       EXISTING_DIRECTORY_PROBE = 4;
 
-      // 'Path' is a file or directory probed by the action that was not present during execution.
-      // If path is present as a file or directory, this pathset does not match the filesystem.
-      // Otherwise the hash of the string constant "P" must be added to the prospective strong fingerprint.
+      // `Path` is a file or directory probed for existence by the action that was not
+      // present during execution. If path is present as a file or directory, this pathset
+      // does not match the filesystem. Otherwise the hash of the string constant "P" must
+      // be added to the prospective strong fingerprint.
       ABSENT_FILE_OR_DIRECTORY_PROBE = 5;
     }
 
     // File or directory path.
     string Path = 1;
 
-    // Defines the meaning of Path and how to compare to the local filesystem.
+    // Defines the meaning of `Path` and how to compare to the local filesystem.
     OpKind Kind = 2;
 
-    // For entries of OpType.DIRECTORY_ENUMERATION, the enumeration pattern used.
+    // For entries of `OpType.DIRECTORY_ENUMERATION`, the enumeration pattern used.
     // When null/empty/missing the search pattern was "*" meaning the full directory.
     string DirectorySearchPattern = 3;
   }
 
-  // Observed path set entries. In order to ensure consistent hashing of the same ObservedPathSet,
-  // the entries MUST be sorted lexicographically by the Path code point (or, equivalently, by UTF-8
+  // Observed path set entries. In order to ensure consistent hashing of the same `ObservedPathSet`,
+  // the entries MUST be sorted lexicographically by Path code point (or, equivalently, by UTF-8
   // bytes).
   repeated Entry Entries = 1;
 
-  // For directory comparisons in Entries marked with OpKind.DIRECTORY_SEARCH, defines the filenames,
+  // For directory comparisons in Entries marked with `OpKind.DIRECTORY_SEARCH`, defines the filenames,
   // with extensions removed, that were read by the action. These are used as the filter for generating
   // a directory hash to add to the prospective strong fingerprint.
   repeated string ObservedAccessedFileNames = 2;
 }
 
-erik: TODO: Define the chain from WeakFingerprint -> selectors -> ActionResult - is there a missing part?
+TODO: erik: Add AnyBuild 2-way exec contract and discuss VFS layouts
 
 // Represents a two-phase cache pathset, referenced or inlined, with the strong fingerprint
 // that can be used to retrieve build outputs if the pathset matches the client's filesystem.
@@ -1500,13 +1514,17 @@ message ObservedPathSetAndStrongFingerprint {
   // would cause the response to exceed message size limits.
   bytes pathset = 2;
 
-  // TODO: erik: We need file hashes here as observed inputs.
-  // TODO: erik: Is this format sufficient and does it match the needs of the build outputs?
+  // The strong fingerprint generated along with the pathset from the filesystem after
+  // completion of the [Action][build.bazel.remote.execution.v2.Action]. This value is
+  // compared to the prospective strong fingerprint during comparison of
+  // an [ObservedPathSet][build.bazel.remote.execution.v2.ObservedPathSet] to the
+  // client filesystem.
+  Digest strong_fingerprint_digest = 3;
 
-  // The strong fingerprint digest of the [Action][build.bazel.remote.execution.v2.Action]
+  // The strong fingerprint digest of the [ActionResult][build.bazel.remote.execution.v2.ActionResult]
   // to retrieve from [ActionCache.GetActionResult][build.bazel.remote.execution.v2.ActionCache.GetActionResult]
-  // if the pathset above matches the client filesystem.
-  Digest action_digest = 3;
+  // if the prospective strong fingerprint generated from the pathset matches `strong_fingerprint_digest`.
+  Digest action_result_digest = 4;
 }
 
 // A request message for
