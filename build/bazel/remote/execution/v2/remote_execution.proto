@@ -1481,7 +1481,7 @@ message ObservedPathSet
     // Defines the meaning of `Path` and how to compare to the local filesystem.
     OpKind Kind = 2;
 
-    // For entries of `OpType.DIRECTORY_ENUMERATION`, the enumeration pattern used.
+    // For entries of `OpKind.DIRECTORY_ENUMERATION`, the enumeration pattern used.
     // When null/empty/missing the search pattern was "*" meaning the full directory.
     string DirectorySearchPattern = 3;
   }
@@ -1498,6 +1498,7 @@ message ObservedPathSet
 }
 
 TODO: erik: Add AnyBuild 2-way exec contract and discuss VFS layouts
+TODO: erik: Add ConsoleOut as optional output format for ActionResult
 
 // Represents a two-phase cache pathset, referenced or inlined, with the strong fingerprint
 // that can be used to retrieve build outputs if the pathset matches the client's filesystem.
