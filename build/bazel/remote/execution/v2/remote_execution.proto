@@ -843,11 +843,18 @@ message FileNode {
 
   // The digest of the file's content.
   //
-  // If a virtual filesystem is in use for action execution, e.g. for use with dynamic
-  // file and directory retrieval in
+  // If a virtual filesystem is in use for action execution, e.g. for use with
+  // dynamic file and directory retrieval in
   // [ExecuteWithDynamicRetrieval][build.bazel.remote.execution.v2.Execution.ExecuteWithDynamicRetrieval],
-  // this digest is allowed to be empty/zero-length, meaning that this file is meant to fill the VFS
-  // view but was predicted as unlikely to be used by the action.
+  // this digest is allowed to be empty/zero-length, but with a file size
+  // specified, meaning that this file is meant to fill the VFS view but was
+  // predicted as unlikely to be used by the action, and its content was
+  // not uploaded to the CAS. Example: If an `Action` is predicted to use
+  // only 1 file in a directory, either from static prediction or using
+  // historical information, the client may choose to hash and upload just
+  // that one file, but to support the `Action` possibly using additional
+  // files in the directory, the directory is uploaded with file names and
+  // sizes for rendering in the VFS.
   Digest digest = 2;
 
   reserved 3; // Reserved to ensure wire-compatibility with `OutputFile`.
@@ -1766,19 +1773,26 @@ message ObservedPathSet
     // Defines the meaning of `Path` and how to compare to the local filesystem.
     OpKind Kind = 2;
 
-    // For entries of `OpKind.DIRECTORY_ENUMERATION`, the enumeration pattern used.
-    // When null/empty/missing the search pattern was "*" meaning the full directory.
+    // For entries of `OpKind.DIRECTORY_ENUMERATION`, the enumeration pattern
+    // used. When null/empty/missing the search pattern was "*" meaning the
+    // full directory.
     string DirectorySearchPattern = 3;
   }
 
-  // Observed path set entries. In order to ensure consistent hashing of the same `ObservedPathSet`,
-  // the entries MUST be sorted lexicographically by Path code point (or, equivalently, by UTF-8
-  // bytes).
+  // Observed path set entries. In order to ensure consistent hashing of the
+  // same `ObservedPathSet`, the entries MUST be sorted lexicographically by
+  // Path code point (or, equivalently, by UTF-8 bytes).
   repeated Entry Entries = 1;
 
-  // For directory comparisons in Entries marked with `OpKind.DIRECTORY_SEARCH`, defines the filenames,
-  // with extensions removed, that were read by the action. These are used as the filter for generating
-  // a directory hash to add to the prospective strong fingerprint.
+  // For directory comparisons in Entries marked with `OpKind.DIRECTORY_SEARCH`,
+  // defines the filenames, with extensions removed, that were read by the
+  // action. These are used as the filter for generating a directory hash to
+  // add to the prospective strong fingerprint.
+  //
+  // Design point: Extensions are removed from storage and comparisons because
+  // of search path implementations in tools that search for a varied list of
+  // extensions (e.g. .h, .hpp, no extension in C++; .dll, .exe in .NET
+  // assembly search).
   repeated string ObservedAccessedFileNames = 2;
 }
 
