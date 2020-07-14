@@ -108,20 +108,22 @@ service Execution {
     option (google.api.http) = { post: "/v2/{instance_name=**}/actions:execute" body: "*" };
   }
 
-  // Execute an action remotely, allowing dynamic retrieval of incomplete
-  // directory and file inputs from the client. The client must remain
-  // connected to the server during the duration of the action execution.
+  // Execute an action remotely, allowing dynamic retrieval of directory and
+  // file inputs from the client where the client did not upload the inputs
+  // beforehand. The client must remain connected to the worker during the
+  // duration of the action execution.
   //
   // In order to execute an action, the client must first upload the best
   // guesses for the `Action`'s file inputs, the
   // [Command][build.bazel.remote.execution.v2.Command] to run, and the
   // [Action][build.bazel.remote.execution.v2.Action] into the
   // [ContentAddressableStorage][build.bazel.remote.execution.v2.ContentAddressableStorage].
-  // It then calls `ExecuteWithDynamicRetrieval` with an `action_digest` referring to them. The
-  // server will run the action and eventually return the result.
+  // It then calls `ExecuteWithDynamicRetrieval` with an `action_digest`
+  // referring to them. The worker will run the action and eventually return
+  // the result.
   //
   // This API is bidirectional both from the client to server and from server
-  // to client, to allow the client to answer questions from the server about
+  // to client to allow the client to answer questions from the server about
   // the contents of specific directories, file hashes, or to upload file
   // content on demand. This allows the server to execute actions whose inputs
   // are incompletely specified. It also prevents execution of the action in a
@@ -1776,28 +1778,32 @@ message ObservedPathSet
 // Represents a two-phase cache pathset, referenced or inlined, with the strong fingerprint
 // that can be used to retrieve build outputs if the pathset matches the client's filesystem.
 message ObservedPathSetAndStrongFingerprint {
-  // The digest for a blob containing the pathset, which can be retrieved from the
+  // The digest for a blob containing the
+  // [ObservedPathSet][build.bazel.remote.execution.v2.ObservedPathSet],
+  // which can be retrieved from the
   // [ContentAddressableStorage][build.bazel.remote.execution.v2.ContentAddressableStorage].
   // Servers SHOULD increase the TTL of the referenced blob if necessary and
   // applicable.
   Digest pathset_digest = 1;
 
-  // An inlined copy of the pathset. The server SHOULD NOT inline pathsets unless requested by
-  // the client in the [GetPotentialActionResultsRequest][build.bazel.remote.execution.v2.GetPotentialActionResultsRequest]
-  // message. The server MAY omit inlining, even if requested, and MUST do so if inlining
-  // would cause the response to exceed message size limits.
+  // An inlined copy of the pathset. The server SHOULD NOT inline pathsets
+  // unless requested by the client in the
+  // [GetPotentialActionResultsRequest][build.bazel.remote.execution.v2.GetPotentialActionResultsRequest]
+  // message. The server MAY omit inlining, even if requested, and MUST do so
+  // if inlining would cause the response to exceed message size limits.
   bytes pathset = 2;
 
-  // The strong fingerprint generated along with the pathset from the filesystem after
-  // completion of the [Action][build.bazel.remote.execution.v2.Action]. This value is
-  // compared to the prospective strong fingerprint during comparison of
-  // an [ObservedPathSet][build.bazel.remote.execution.v2.ObservedPathSet] to the
-  // client filesystem.
+  // The strong fingerprint generated along with the pathset from the
+  // filesystem after completion of the [Action][build.bazel.remote.execution.v2.Action].
+  // This value is compared to the prospective strong fingerprint during
+  // comparison of an [ObservedPathSet][build.bazel.remote.execution.v2.ObservedPathSet]
+  // to the client filesystem.
   Digest strong_fingerprint_digest = 3;
 
   // The strong fingerprint digest of the [ActionResult][build.bazel.remote.execution.v2.ActionResult]
   // to retrieve from [ActionCache.GetActionResult][build.bazel.remote.execution.v2.ActionCache.GetActionResult]
-  // if the prospective strong fingerprint generated from the pathset matches `strong_fingerprint_digest`.
+  // if the prospective strong fingerprint generated from the pathset matches
+  // `strong_fingerprint_digest`.
   Digest action_result_digest = 4;
 }
 
@@ -2174,7 +2180,8 @@ message CacheCapabilities {
   // Whether absolute symlink targets are supported.
   SymlinkAbsolutePathStrategy.Value symlink_absolute_path_strategy = 5;
 
-  // Support for two-phase caching for actions with possibly under-specified inputs.
+  // Support for two-phase caching for actions with possibly under-specified
+  // inputs.
   TwoPhaseCacheSupport.Value two_phase_cache_support = 6;
 }
 
