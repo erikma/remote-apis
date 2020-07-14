@@ -113,6 +113,8 @@ service Execution {
   // beforehand. The client must remain connected to the worker during the
   // duration of the action execution.
   //
+  // This call may not be implemented on all platforms.
+  //
   // In order to execute an action, the client must first upload the best
   // guesses for the `Action`'s file inputs, the
   // [Command][build.bazel.remote.execution.v2.Command] to run, and the
@@ -178,6 +180,11 @@ service Execution {
   // * `CANCELLED`: The operation was cancelled by the client. This status is
   //   only possible if the server implements the Operations API CancelOperation
   //   method, and it was called for the current execution.
+  // * `NOT_IMPLEMENTED`: This server does not implement this optional call.
+  //   Implicitly this means that
+  //   [DynamicExecutionSupport.NOT_SUPPORTED][build.bazel.remote.execution.v2.DynamicExecutionSupport.NOT_SUPPORTED]
+  //   or [DynamicExecutionSupport.UNKNOWN][build.bazel.remote.execution.v2.DynamicExecutionSupport.UNKNOWN]
+  //   is set in the [ExecutionCapabilities][build.bazel.remote.execution.v2.ExecutionCapabilities].
   rpc ExecuteWithDynamicRetrieval(stream StreamedDynamicExecutionRequest) returns (stream google.longrunning.Operation) {
     option (google.api.http) = { post: "/v2/{instance_name=**}/actions:executeDynamic" body: "*" };
   }
