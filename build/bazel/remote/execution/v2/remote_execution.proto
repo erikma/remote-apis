@@ -982,7 +982,7 @@ message ExecutedActionMetadata {
   // The total time spent by the worker waiting for dynamic directory
   // information from the client. Used with
   // [ExecuteWithDynamicRetrieval][build.bazel.remote.execution.v2.Execution.ExecuteWithDynamicRetrieval].
-  google.protbuf.Duration dynamic_directory_requests_time = 12;
+  google.protobuf.Duration dynamic_directory_requests_time = 12;
 
   // The number of dynamic file hash requests made to the client. Used with
   // [ExecuteWithDynamicRetrieval][build.bazel.remote.execution.v2.Execution.ExecuteWithDynamicRetrieval].
@@ -991,7 +991,7 @@ message ExecutedActionMetadata {
   // The total time spent by the worker waiting for dynamic file hash
   // information from the client. Used with
   // [ExecuteWithDynamicRetrieval][build.bazel.remote.execution.v2.Execution.ExecuteWithDynamicRetrieval].
-  google.protbuf.Duration dynamic_file_hash_requests_time = 14;
+  google.protobuf.Duration dynamic_file_hash_requests_time = 14;
 
   // The number of dynamic file content requests made to the client when the
   // worker could not find a dynamic file hash in the CAS. Used with
@@ -1001,7 +1001,7 @@ message ExecutedActionMetadata {
   // The total time spent by the worker waiting for dynamic file content
   // information from the client. Used with
   // [ExecuteWithDynamicRetrieval][build.bazel.remote.execution.v2.Execution.ExecuteWithDynamicRetrieval].
-  google.protbuf.Duration dynamic_file_content_requests_time = 16;
+  google.protobuf.Duration dynamic_file_content_requests_time = 16;
 }
 
 // An ActionResult represents the result of an
@@ -1185,13 +1185,13 @@ message ActionResult {
   // [GetActionResultRequest][build.bazel.remote.execution.v2.GetActionResultRequest]
   // message. The server MAY omit inlining, even if requested, and MUST do so if inlining
   // would cause the response to exceed message size limits.
-  bytes console_outputs = 10;
+  bytes console_outputs = 13;
 
   // The digest for a blob containing the
   // [ConsoleOutputs][build.bazel.remote.execution.v2.ConsoleOutputs] for the action,
   // which can be retrieved from the
   // [ContentAddressableStorage][build.bazel.remote.execution.v2.ContentAddressableStorage].
-  Digest console_outputs_digest = 11;
+  Digest console_outputs_digest = 14;
 }
 
 // A sequence of console outputs in the order received for a remoted process.
@@ -1497,11 +1497,11 @@ message StreamedDynamicExecutionRequest {
   // Provides dynamic file hash information in response to a previous
   // request from the worker in
   // [DynamicExecuteOperationMetadata.dynamic_file_hash_path][build.bazel.remote.execution.v2.DynamicExecuteOperationMetadata].
-  DynamicFileHashResponse dynamic_file_hash_response = 2;
+  DynamicFileHashResponse dynamic_file_hash_response = 3;
 
   // Provides a response from a previous request from the worker that
   // file content be uploaded by the client to the CAS.
-  DynamicFileContentResponse dynamic_file_content_response = 3;
+  DynamicFileContentResponse dynamic_file_content_response = 4;
 }
 
 // A `LogFile` is a log stored in the CAS.
@@ -1668,25 +1668,6 @@ message GetPotentialActionResultsResponse {
   // [request][build.bazel.remote.execution.v2.GetPotentialActionResults].
   // If empty, signifies that this is the last page of results.
   string next_page_token = 2;
-}
-
-message ExecutionStage {
-  enum Value {
-    // Invalid value.
-    UNKNOWN = 0;
-
-    // Checking the result against the cache.
-    CACHE_CHECK = 1;
-
-    // Currently idle, awaiting a free machine to execute.
-    QUEUED = 2;
-
-    // Currently being executed by a worker.
-    EXECUTING = 3;
-
-    // Finished execution.
-    COMPLETED = 4;
-  }
 }
 
 // The ordered file reads and probes, and directory enumerations, used to
