@@ -266,9 +266,10 @@ service ActionCache {
     option (google.api.http) = { get: "/v2/{instance_name=**}/actionResults/{action_digest.hash}/{action_digest.size_bytes}" };
   }
 
-  // Retrieves a set of potential matches for an action fingerprint. If a
-  // specific result matches the client's filesystem, the client uses the
-  // related selector to retrieve the build outputs using
+  // Retrieves a set of potential matches for an action fingerprint that can
+  // incompletely describe the inputs needed by an action. If a specific
+  // result matches the client's filesystem, the client uses the related
+  // `ActionResult` digest to retrieve the build outputs using
   // [ActionCache.GetActionResult][build.bazel.remote.execution.v2.ActionCache.GetActionResult]
   //
   // This call may not be implemented on all platforms. See 
@@ -276,7 +277,7 @@ service ActionCache {
   //
   // Errors:
   //
-  // * `NOT_FOUND`: The requested `ActionResult` is not in the cache.
+  // * `NOT_FOUND`: The requested action digest is not in the cache.
   // * `NOT_IMPLEMENTED`: This server does not implement this optional call. Implicitly this means
   //   that [TwoPhaseCacheSupport.NOT_SUPPORTED][build.bazel.remote.execution.v2.TwoPhaseCacheSupport.NOT_SUPPORTED]
   //   or [TwoPhaseCacheSupport.UNKNOWN][build.bazel.remote.execution.v2.TwoPhaseCacheSupport.UNKNOWN]
@@ -1680,7 +1681,7 @@ message GetPotentialActionResultsRequest {
   string instance_name = 1;
 
   // The hash of an [Action][build.bazel.remote.execution.v2.Action] that may
-  // contain incomplete file input predictions. This possibly incomplete `Action`
+  // contain incomplete file input predictions. This possibly-incomplete `Action`
   // acts as a key to look up potential action results that must be compared
   // to the client's current filesystem contents to get a match. On a match,
   // the corresponding build outputs in the form of an
