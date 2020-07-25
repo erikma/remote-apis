@@ -108,30 +108,57 @@ service Execution {
     option (google.api.http) = { post: "/v2/{instance_name=**}/actions:execute" body: "*" };
   }
 
-  // Execute an action remotely, allowing dynamic retrieval of directory and
+  // Executes an action remotely, allowing dynamic retrieval of directory and
   // file inputs from the client where the client did not upload the inputs
   // beforehand. The client must remain connected to the worker during the
   // duration of the action execution.
   //
-  // This call may not be implemented on all platforms.
+  // This call may not be implemented on all platforms. Its support is
+  // indicated by
+  // [ExecutionCapabilities.dynamic_execution_support][build.bazel.remote.execution.v2.ExecutionCapabilities.dynamic_execution_support].
   //
   // In order to execute an action, the client must first upload the best
-  // guesses for the `Action`'s file inputs, the
+  // guesses for the action's file inputs (which can be zero files if
+  // prediction is unavailable), the
   // [Command][build.bazel.remote.execution.v2.Command] to run, and the
-  // [Action][build.bazel.remote.execution.v2.Action] into the
+  // [Action][build.bazel.remote.execution.v2.Action] containing the best
+  // guess for the `Action`'s needed directory and file layout into the
   // [ContentAddressableStorage][build.bazel.remote.execution.v2.ContentAddressableStorage].
   // It then calls `ExecuteWithDynamicRetrieval` with an `action_digest`
   // referring to them. The worker will run the action and eventually return
   // the result.
   //
+  // The `Action.input_root_digest` directory tree provides a filesystem
+  // layout that may be underspecified in terms of missing directories or
+  // unspecified file hashes. Any `Directory` entry provided in this tree
+  // must contain at least the subdirectory names and file names and sizes
+  // needed to enumerate the complete contents of the directory.
+  //
+  // A typical implementation of a server using dynamic execution will use a
+  // virtual filesystem to allow receiving callbacks about files and
+  // directories requested via operating system filesytem APIs. The server
+  // MAY allow rendering of a fully qualified, rooted filesystem by the
+  // client, by accepting in `Action.input_root_digest` a `Directory` tree
+  // that contains a filesystem root appropriate to the operating system.
+  // By convention, representation of such a filesystem utilizes a Directory
+  // with an empty string for a name. Under Linux this translates into the
+  // '/' root. Under Windows such a root contains `DirectoryNode`s that are
+  // the single-character drive letters available on the client, allowing
+  // the server to present a virtual filesystem spanning all drive roots
+  // for dynamic request by the server. There must be exactly one such
+  // empty-string root at the root of the directory tree; any use of empty
+  // strings other than the root SHOULD result in an `INVALID_ARGUMENT`
+  // error.
+  //
   // This API is bidirectional both from the client to server and from server
   // to client to allow the client to answer questions from the server about
-  // the contents of specific directories, file hashes, or to upload file
-  // content on demand. This allows the server to execute actions whose inputs
-  // are incompletely specified. It also prevents execution of the action in a
-  // fire-and-forget fashion - the client must remain connected to the server
-  // for the entire execution of the `Action`, or else the server MUST
-  // cancel the in-progress execution.
+  // the contents of unspecified directories, file hashes, or to upload file
+  // content on demand, based on the observed filesystem calls of the action.
+  // This allows the server to execute actions whose inputs are incompletely
+  // specified. It also prevents execution of the action in a fire-and-forget
+  // fashion; the client must remain connected to the server for the entire
+  // execution of the action, or else the server MUST cancel the in-progress
+  // execution.
   // [WaitExecution][build.bazel.remote.execution.v2.Execution.WaitExecution]
   // is not allowed for dynamic execution operations.
   //
@@ -185,7 +212,7 @@ service Execution {
   //   [DynamicExecutionSupport.NOT_SUPPORTED][build.bazel.remote.execution.v2.DynamicExecutionSupport.NOT_SUPPORTED]
   //   or [DynamicExecutionSupport.UNKNOWN][build.bazel.remote.execution.v2.DynamicExecutionSupport.UNKNOWN]
   //   is set in the [ExecutionCapabilities][build.bazel.remote.execution.v2.ExecutionCapabilities].
-  rpc ExecuteWithDynamicRetrieval(stream StreamedDynamicExecutionRequest) returns (stream google.longrunning.Operation) {
+  rpc ExecuteWithDynamicRetrieval(stream StreamedDynamicExecutionData) returns (stream google.longrunning.Operation) {
     option (google.api.http) = { post: "/v2/{instance_name=**}/actions:executeDynamic" body: "*" };
   }
   
@@ -873,6 +900,13 @@ message FileNode {
 // a `Directory` and its associated metadata.
 message DirectoryNode {
   // The name of the directory.
+  //
+  // If a virtual filesystem is in use for action execution, e.g. for use with
+  // dynamic file and directory retrieval in
+  // [ExecuteWithDynamicRetrieval][build.bazel.remote.execution.v2.Execution.ExecuteWithDynamicRetrieval],
+  // this string is allowed to be empty/zero-length, which maps to an OS
+  // specific filesystem root ('/' on Linux, or a virtual root containing
+  // drive letters on Windows). See notes on `ExecuteWithDynamicRetrieval`.
   string name = 1;
 
   // The digest of the
@@ -945,6 +979,35 @@ message Digest {
 
 // ExecutedActionMetadata contains details about a completed execution.
 message ExecutedActionMetadata {
+  //  Used with
+  // [ExecuteWithDynamicRetrieval][build.bazel.remote.execution.v2.Execution.ExecuteWithDynamicRetrieval].
+  message DynamicExecutionMetadata {
+    // The number of dynamic directory information requests made to the client.
+    int32 num_dynamic_directory_requests = 1;
+
+    // The total time spent by the worker waiting for dynamic directory
+    // information from the client.
+    google.protobuf.Duration dynamic_directory_requests_time = 2;
+
+    // The number of dynamic file hash requests made to the client.
+    int32 num_dynamic_file_hash_requests = 3;
+
+    // The total time spent by the worker waiting for dynamic file hash
+    // information from the client.
+    google.protobuf.Duration dynamic_file_hash_requests_time = 4;
+
+    // The number of dynamic file content requests made to the client when the
+    // worker could not find a dynamic file hash in the CAS.
+    int32 num_dynamic_file_content_requests = 5;
+
+    // The total time spent by the worker waiting for dynamic file content
+    // information from the client.
+    google.protobuf.Duration dynamic_file_content_requests_time = 6;
+
+    // Additional implementation-specific statistics.
+    google.protobuf.Any extended_metadata = 7;
+  }
+
   // The name of the worker which ran the execution.
   string worker = 1;
 
@@ -975,34 +1038,9 @@ message ExecutedActionMetadata {
   // When the worker finished uploading action outputs.
   google.protobuf.Timestamp output_upload_completed_timestamp = 10;
 
-  // The number of dynamic directory information requests made to the client.
-  // Used with
+  // Additional statistics for dynamic execution via
   // [ExecuteWithDynamicRetrieval][build.bazel.remote.execution.v2.Execution.ExecuteWithDynamicRetrieval].
-  int32 num_dynamic_directory_requests = 11;
-
-  // The total time spent by the worker waiting for dynamic directory
-  // information from the client. Used with
-  // [ExecuteWithDynamicRetrieval][build.bazel.remote.execution.v2.Execution.ExecuteWithDynamicRetrieval].
-  google.protobuf.Duration dynamic_directory_requests_time = 12;
-
-  // The number of dynamic file hash requests made to the client. Used with
-  // [ExecuteWithDynamicRetrieval][build.bazel.remote.execution.v2.Execution.ExecuteWithDynamicRetrieval].
-  int32 num_dynamic_file_hash_requests = 13;
-
-  // The total time spent by the worker waiting for dynamic file hash
-  // information from the client. Used with
-  // [ExecuteWithDynamicRetrieval][build.bazel.remote.execution.v2.Execution.ExecuteWithDynamicRetrieval].
-  google.protobuf.Duration dynamic_file_hash_requests_time = 14;
-
-  // The number of dynamic file content requests made to the client when the
-  // worker could not find a dynamic file hash in the CAS. Used with
-  // [ExecuteWithDynamicRetrieval][build.bazel.remote.execution.v2.Execution.ExecuteWithDynamicRetrieval].
-  int32 num_dynamic_file_content_requests = 15;
-
-  // The total time spent by the worker waiting for dynamic file content
-  // information from the client. Used with
-  // [ExecuteWithDynamicRetrieval][build.bazel.remote.execution.v2.Execution.ExecuteWithDynamicRetrieval].
-  google.protobuf.Duration dynamic_file_content_requests_time = 16;
+  DynamicExecutionMetadata dynamic_execution = 11;
 }
 
 // An ActionResult represents the result of an
@@ -1202,19 +1240,25 @@ message ActionResult {
 // streams as single large writes in a server-defined order.
 message ConsoleOutputs
 {
-  // A series of stdout and stderr outputs in order of write from the remoted process.
-  repeated ConsoleOutput ConsoleOutputs = 2;
-}
+  // An output record for one or more outputs to stdout or stderr.
+  //
+  // Design note: For text coloring and other effects, ANSI codes may be
+  // embedded within these strings. Windows console API calls are not
+  // supported in this protocol, but a server implementation MAY choose to
+  // translate console API calls into ANSI codes, as more recent Windows 10
+  // releases included ANSI code support.
+  message ConsoleOutput {
+    // When true, the `Writes` were directed at the stderr stream.
+    bool is_stderr = 1;
+    
+    // One or more written strings. There is an implicit operating system
+    // dependent newline after each string. Each string may contain embedded
+    // OS-dependent newline character sequences.
+    repeated string writes = 2;
+  }
 
-// An output record for one or more outputs to stdout or stderr.
-message ConsoleOutput {
-  // When true, the `Writes` were directed at the stderr stream.
-  bool IsStdErr = 1;
-  
-  // One or more written strings. There is an implicit operating system
-  // dependent newline after each string. Each string may contain embedded
-  // OS-dependent newline character sequences.
-  repeated string Writes = 2;
+  // A series of stdout and stderr outputs in order of write from the remoted process.
+  repeated ConsoleOutput outputs = 2;
 }
 
 // An `OutputFile` is similar to a
@@ -1391,11 +1435,15 @@ message DynamicExecuteOperationMetadata {
   // to the CAS.
   message DynamicFileContentRequest {
     // The file path for which the worker does not have the contents.
+    // Depending on the server and client implementation this may be a
+    // relative or fully qualified path.
     string path = 1;
 
     // The file hash of the content expected by the worker.
     // If this is not the current hash of the file content at `path`
-    string FileHash = 2;
+    // then the corrected hash is returned in
+    // `DynamicExecuteOperationMetadata.dynamic_directory_metadata_response`.
+    string file_hash = 2;
   }
 
   // The current stage of execution.
@@ -1414,22 +1462,26 @@ message DynamicExecuteOperationMetadata {
   // messages and instead wait to the final `ExecuteResponse` to return all
   // outputs from the action, however in this case the server MUST NOT return
   // any incremental messages in this field.
-  repeated ConsoleOutput streamed_console_outputs = 3;
+  ConsoleOutputs streamed_console_outputs = 3;
 
-  // A directory path for which the worker does not have metadata. this
+  // A directory path for which the worker does not have metadata. This
   // indicates a directory that the `Action` was not predicted to use
   // from the client filesystem. The client is requested to enumerate
   // directory metadata and respond in
-  // [StreamedDynamicExecutionRequest.dynamic_directory_metadata_response][build.bazel.remote.execution.StreamedDynamicExecutionRequest].
+  // [StreamedDynamicExecutionData.dynamic_directory_metadata_response][build.bazel.remote.execution.StreamedDynamicExecutionData].
   // The client MAY include individual file digests but this is not required,
   // the worker will request individual file hashes as needed using
   // `dynamic_file_hash_path`.
+  // Depending on the server and client implementation this may be a
+  // relative or fully qualified path.
   string dynamic_directory_content_path = 4;
 
   // A file path for which the worker does not have a hash. This indicates
   // a file that the `Action` was not predicted to use from the client
   // filesystem. The client is requested to hash the file and respond in
-  // [StreamedDynamicExecutionRequest.dynamic_file_hash_response][build.bazel.remote.execution.StreamedDynamicExecutionRequest].
+  // [StreamedDynamicExecutionData.dynamic_file_hash_response][build.bazel.remote.execution.StreamedDynamicExecutionData].
+  // Depending on the server and client implementation this may be a
+  // relative or fully qualified path.
   string dynamic_file_hash_path = 5;
 
   // A file path and expected content hash that the worker does not have in
@@ -1437,13 +1489,13 @@ message DynamicExecuteOperationMetadata {
   // to use from the client, or content that was subsequently removed from
   // the CAS. The client is requested to upload the file content into the
   // CAS and respond in 
-  // [StreamedDynamicExecutionRequest.dynamic_file_content_response][build.bazel.remote.execution.StreamedDynamicExecutionRequest].
+  // [StreamedDynamicExecutionData.dynamic_file_content_response][build.bazel.remote.execution.StreamedDynamicExecutionData].
   DynamicFileContentRequest dynamic_file_content_request = 6;
 }
 
 // A streaming request message for
 // [Execution.ExecuteWithDynamicRetrieval][build.bazel.remote.execution.v2.Execution.ExecuteWithDynamicRetrieval].
-message StreamedDynamicExecutionRequest {
+message StreamedDynamicExecutionData {
   // Sent in response to a dynamic directory metadata request.
   message DynamicDirectoryMetadataResponse {
     // The directory path, copied from the directory metadata request.
@@ -1464,8 +1516,11 @@ message StreamedDynamicExecutionRequest {
     // The file path, copied from the file hash request.
     string path = 1;
     
+    // Set to true if the requested file path does not exist.
+    bool file_does_not_exist = 2;
+
     // The file digest and associated metadata.
-    FileNode file = 2;
+    FileNode file = 3;
   }
 
   // Sent in response to a dynamic file content request.
@@ -1483,6 +1538,11 @@ message StreamedDynamicExecutionRequest {
     // file-not-found return code to the executing `Action` file read request
     // which may cause the action to fail.
     bool could_not_upload = 2;
+
+    // The hash and size of the file. This is important for  the case where
+    // the file path requested by the server did not have the same hash as
+    // expected.
+    Digest file_digest = 3;
   }
 
   // Details of the action to execute. This message should only included in
@@ -2150,10 +2210,9 @@ message ConsoleOutputSupport {
   }
 }
 
-// Describes support for the
-// [ConsoleOutputs][build.bazel.remote.execution.v2.ActionCache.ConsoleOutputs]
-// format in
-// [ActionResult][build.bazel.remote.execution.v2.ActionCache.ActionResult].
+// Describes support for
+// [ExecuteWithDynamicRetrieval][build.bazel.remote.execution.v2.Execution.ExecuteWithDynamicRetrieval]
+// API support.
 message DynamicExecutionSupport {
   enum Value {
     // Invalid value, defaults to NOT_SUPPORTED.
