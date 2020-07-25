@@ -1722,12 +1722,16 @@ message GetPotentialActionResultsRequest {
   string page_token = 5;
 }
 
-// Returns a set of zero or more (pathset, strong fingerprint)
-// results from a two-phase cache lookup call to
+// Returns a set of zero or more
+// (pathset, observed-input digest, `ActionResult` digest) results
+// from a two-phase cache lookup call to
 // [ActionCache.GetPotentialActionResults][build.bazel.remote.execution.v2.ActionCache.GetPotentialActionResults].
+// These results are compared to the local filesystem and, on a match to the
+// observed-input digest, the associated `ActionResult` is used to retrieve
+// cached outputs.
 message GetPotentialActionResultsResponse {
   // A set of possible matches to the client filesystem along with a reference to build outputs.
-  repeated ObservedPathSetAndStrongFingerprint potential_action_matches = 1;
+  repeated ObservedPathSetAndInputDigest potential_action_matches = 1;
 
   // If present, signifies that there are more results which the client can
   // retrieve by passing this as the page_token in a subsequent
@@ -1736,33 +1740,33 @@ message GetPotentialActionResultsResponse {
   string next_page_token = 2;
 }
 
-// The ordered file reads and probes and directory enumerations used to
-// compare to the client filesystem when seeking a match from an action
-// fingerprint formed from potentially incomplete (underspecified) inputs to a
-// set of outputs.
+// The ordered file reads and probes and directory enumerations used in
+// two-phase caching to compare to the client filesystem when seeking a match
+// from an action fingerprint formed from potentially incomplete
+// (underspecified) inputs to a set of outputs.
 //
-// When performing a comparison for a two-phase cache lookup, a corresponding
-// prospective strong fingerprint is initialized. Each entry is examined
-// against the filesystem, and depending on the outcome of the comparison,
-// new hash information is added to the prospective strong fingerprint.
-// At the end of pathset enumeration the prospective strong fingerprint is
-// compared to the strong fingerprint provided in the two-phase cache lookup
-// (`strong_fingerprint_digest` in
-// [ObservedPathSetAndStrongFingerprint][build.bazel.remote.execution.v2.ObservedPathSetAndStrongFingerprint])
+// When comparing to the filesystem, a corresponding observed-input digest is
+// initialized. Each pathset entry is examined against the filesystem, and
+// depending on the outcome of the comparison, new hash information is added
+// to the observed-input digest. At the end of pathset enumeration the
+// observed-input digest is compared to the observed-input digest provided in
+// the two-phase cache lookup (`observed_input_digest` in
+// [ObservedPathSetAndInputDigest][build.bazel.remote.execution.v2.ObservedPathSetAndInputDigest])
 // and if they match, this is a cache hit, and the resulting
-// [ActionResult][build.bazel.remote.execution.v2.ActionResult] should be retrieved
-// and used.
+// [ActionResult][build.bazel.remote.execution.v2.ActionResult] should be
+// retrieved and used.
 //
 // Generating a directory hash: Create a list of the names of directory members
-// (files and directories) that pass the directory enumeration or OberservedAccessFileNames
-// filters. Lexicographically sort the names by code point or, equivalently, by the UTF-8
-// bytes. Join the sorted strings together with the ',' character to form a comma-delimited list;
-// note for a multi-member list this means that there is no tail ',', e.g. for
+// (files and directories) that pass the directory enumeration or
+// `ObservedAccessFileNames` filters. Lexicographically sort the names by code
+// point or, equivalently, by the UTF-8 bytes. Join the sorted strings together
+// with the ',' character to form a comma-delimited list; note for a
+// multi-member list this means that there is no tail ',', e.g. for
 // a.h and b.h the list string is "a.h,b.h". Convert this string to uppercase.
 // Hash the UTF-8 string bytes.
 //
-// Discussion of how to generate pathsets from action execution filesystem traces can be
-// found at
+// Discussion of how to generate pathsets from action execution filesystem
+// observations can be found at
 // https://github.com/microsoft/BuildXL/blob/master/Documentation/Wiki/Advanced-Features/Search-Path-Enumeration.md .
 message ObservedPathSet
 {
@@ -1776,15 +1780,15 @@ message ObservedPathSet
       // `Path` refers to a file that was read by the action. If the file is
       // not present, this pathset does not match the filesystem. Otherwise
       // the hash of the string constant "R" followed by the hash of the file
-      // must be added to the prospective strong fingerprint.
+      // must be added to the observed-input digest.
       FILE_READ = 0;
 
       // `Path` is a directory that was enumerated by the action using
       // `DirectorySearchPattern`. If the directory is missing, this pathset
       // does not match the filesystem. Otherwise the hash of the string
       // constant "E" followed by the hash of the directory contents with the
-      // search pattern applied must be added to the proposective strong
-      // fingerprint. See comments on
+      // search pattern applied must be added to the observed-input digest.
+      // See comments on
       // [ObservedPathSet][build.bazel.remote.execution.v2.ObservedPathSet]
       // for how to generate a directory hash.
       DIRECTORY_ENUMERATION = 1;
@@ -1794,8 +1798,8 @@ message ObservedPathSet
       // Otherwise the hash of the string constant "E" followed by a hash of
       // the directory contents filtered to only the file names in
       // `ObservedAccessFileNames` (compared to only the directory's filenames
-      // without extensions) must be added to the prospective strong
-      // fingerprint. See comments on
+      // without extensions) must be added to the observed-input digest.
+      // See comments on
       // [ObservedPathSet][build.bazel.remote.execution.v2.ObservedPathSet]
       // for how to generate a directory hash.
       DIRECTORY_SEARCH = 2;
@@ -1804,21 +1808,21 @@ message ObservedPathSet
       // and that was present during execution. If the file is not present or
       // is instead a directory, this pathset does not match the filesystem.
       // Otherwise the hash of the string constant "F" must be
-      // added to the prospective strong fingerprint.
+      // added to the observed-input digest.
       EXISTING_FILE_PROBE = 3;
 
       // `Path` is a directory probed for existence, but not enumerated, by
       // the action and that was present during execution. If the directory is
       // not present, or is instead a file, this pathset does not match the
       // filesystem. Otherwise the hash of the string constant "D" must be
-      // added to the prospective strong fingerprint.
+      // added to the observed-input digest.
       EXISTING_DIRECTORY_PROBE = 4;
 
       // `Path` is a file or directory probed for existence by the action
       // that was not present during execution. If path is present as a file
       // or directory, this pathset does not match the filesystem. Otherwise
-      // the hash of the string constant "P" must be added to the prospective
-      // strong fingerprint.
+      // the hash of the string constant "P" must be added to the
+      // observed-input digest.
       ABSENT_FILE_OR_DIRECTORY_PROBE = 5;
     }
 
@@ -1843,7 +1847,7 @@ message ObservedPathSet
   // For directory comparisons in Entries marked with `OpKind.DIRECTORY_SEARCH`,
   // this defines the filenames, with extensions removed, that were read by the
   // action. These are used as the filter for generating a directory hash to
-  // add to the prospective strong fingerprint.
+  // add to the observed-input digest.
   //
   // Design point: Extensions are removed from storage and comparisons because
   // of search path implementations in tools that search for a varied list of
@@ -1852,11 +1856,11 @@ message ObservedPathSet
   repeated string ObservedAccessedFileNames = 2;
 }
 
-// Represents a two-phase cache pathset, referenced or inlined, paired with a
-// strong fingerprint and a reference to build outputs to retrieve from the
-// cache if the strong fingerprint calculated from the client's filesystem
+// Represents a two-phase cache pathset, referenced or inlined, with an
+// observed-input digest and a reference to build outputs to retrieve from the
+// cache if the observed-input digest calculated from the client's filesystem
 // matches.
-message ObservedPathSetAndStrongFingerprint {
+message ObservedPathSetAndInputDigest {
   // The digest for a blob containing the
   // [ObservedPathSet][build.bazel.remote.execution.v2.ObservedPathSet],
   // which can be retrieved from the
@@ -1872,17 +1876,17 @@ message ObservedPathSetAndStrongFingerprint {
   // if inlining would cause the response to exceed message size limits.
   bytes pathset = 2;
 
-  // The strong fingerprint generated along with the pathset from the
-  // filesystem after completion of the [Action][build.bazel.remote.execution.v2.Action].
-  // This value is compared to the prospective strong fingerprint during
-  // comparison of an [ObservedPathSet][build.bazel.remote.execution.v2.ObservedPathSet]
+  // The observed-input digest generated along with the pathset from the
+  // worker's filesystem after completion of the [Action][build.bazel.remote.execution.v2.Action].
+  // This value is compared to the observed-input digest during comparison of
+  // an [ObservedPathSet][build.bazel.remote.execution.v2.ObservedPathSet]
   // to the client filesystem.
-  Digest strong_fingerprint_digest = 3;
+  Digest observed_input_digest = 3;
 
   // The digest of the [ActionResult][build.bazel.remote.execution.v2.ActionResult]
   // to retrieve from [ActionCache.GetActionResult][build.bazel.remote.execution.v2.ActionCache.GetActionResult]
-  // if the prospective strong fingerprint generated from the pathset matches
-  // `strong_fingerprint_digest`.
+  // if the observed-input digest generated from the pathset against the client
+  // filesystem matches `observed_input_digest`.
   Digest action_result_digest = 4;
 }
 
