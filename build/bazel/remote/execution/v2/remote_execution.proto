@@ -266,7 +266,7 @@ service ActionCache {
     option (google.api.http) = { get: "/v2/{instance_name=**}/actionResults/{action_digest.hash}/{action_digest.size_bytes}" };
   }
 
-  // Retrieves a set of potential matches for a weak fingerprint. If a
+  // Retrieves a set of potential matches for an action fingerprint. If a
   // specific result matches the client's filesystem, the client uses the
   // related selector to retrieve the build outputs using
   // [ActionCache.GetActionResult][build.bazel.remote.execution.v2.ActionCache.GetActionResult]
@@ -282,7 +282,7 @@ service ActionCache {
   //   or [TwoPhaseCacheSupport.UNKNOWN][build.bazel.remote.execution.v2.TwoPhaseCacheSupport.UNKNOWN]
   //   is set in the [CacheCapabilities][build.bazel.remote.execution.v2.CacheCapabilities].
   rpc GetPotentialActionResults(GetPotentialActionResultsRequest) returns (GetPotentialActionResultsResponse) {
-    option (google.api.http) = { get: "/v2/{instance_name=**}/actionResults/2phase/{weak_fingerprint_digest.hash}/{weak_fingerprint_digest.size_bytes}" };
+    option (google.api.http) = { get: "/v2/{instance_name=**}/actionResults/2phase/{action_fingerprint_digest.hash}/{action_fingerprint_digest.size_bytes}" };
   }
 
   // Upload a new execution result.
@@ -1679,27 +1679,32 @@ message GetPotentialActionResultsRequest {
   // omitted.
   string instance_name = 1;
 
-  // The hash of an [Action][build.bazel.remote.execution.v2.Action] that acts as a weak fingerprint
-  // key to look up potential action results that must be compared to the client's current filesystem
-  // contents to get a match. On a match, the corresponding build outputs in the form of an
-  // [ActionResult][build.bazel.remote.execution.v2.ActionResult] can be retrieved from
+  // The hash of an [Action][build.bazel.remote.execution.v2.Action] that may
+  // contain incomplete file input predictions. This possibly incomplete `Action`
+  // acts as a key to look up potential action results that must be compared
+  // to the client's current filesystem contents to get a match. On a match,
+  // the corresponding build outputs in the form of an
+  // [ActionResult][build.bazel.remote.execution.v2.ActionResult] can be
+  // retrieved from
   // [ActionCache.GetActionResult][build.bazel.remote.execution.v2.ActionCache.GetActionResult].
   //
-  // In two-phase caching an `Action` contains a normal reference to a
-  // [Command][build.bazel.remote.execution.v2.Command] but the `input_root_digest`
-  // can refer to a subset of the files that are predicted to be needed to run the `Action`.
-  // The input root can contain all files needed for the command, in which case the weak
-  // fingerprint should lead to just one output (or none if there are no cache hits).
-  // When the input root contains fewer files than those actually needed by the action,
-  // the weak fingerprint gets less specific, and the number of possible matches grows.
-  // It's possible for the input root to contain zero files, which is a very weak
-  // fingerprint as it can match any output that matches the `Command`.
-  // Less-specific weak fingerprints lead to more I/O and time spent matching pathsets against
-  // the client filesystem; adding in any predictions about the filesystem "focuses"
-  // the lookup to more-sepcific results.
-  Digest weak_fingerprint_action_digest = 2;
+  // In two-phase caching an `Action` contains a reference to a
+  // [Command][build.bazel.remote.execution.v2.Command] but the
+  // `input_root_digest` can refer to a subset of the files that are predicted
+  // to be needed to run the `Action`. The input root can contain all files
+  // needed for the command, in which case the action fingerprint should lead
+  // to just one output (or none if there are no cache hits). When the input
+  // root contains fewer files than those actually needed by the action, the
+  // action fingerprint gets less specific, and the number of possible matches
+  // grows. It is possible for the input root to contain zero files, which is
+  // a very non-specific fingerprint as it can match any action results that
+  // match the `Command`. Less-specific action fingerprints lead to more I/O
+  // and time spent matching `ObservedPathSet`s against the client filesystem;
+  // adding in any predictions about the filesystem "focuses" the lookup to
+  // more-specific results.
+  Digest action_fingerprint_digest = 2;
 
-  // A hint to the server to request inlining pathsets in the
+  // A hint to the server to request inlining `ObservedPathSet`s in the
   // [GetPotentialActionResultsResponse][build.bazel.remote.execution.v2.GetPotentialActionResultsResponse]
   // message.
   bool inline_pathsets = 3;
@@ -1717,7 +1722,7 @@ message GetPotentialActionResultsRequest {
   string page_token = 5;
 }
 
-// A GetPotentialActionResultsResponse returns a set of zero or more (pathset, strong fingerprint)
+// Returns a set of zero or more (pathset, strong fingerprint)
 // results from a two-phase cache lookup call to
 // [ActionCache.GetPotentialActionResults][build.bazel.remote.execution.v2.ActionCache.GetPotentialActionResults].
 message GetPotentialActionResultsResponse {
@@ -1731,11 +1736,12 @@ message GetPotentialActionResultsResponse {
   string next_page_token = 2;
 }
 
-// The ordered file reads and probes, and directory enumerations, used to
-// compare to the client filesystem when seeking a match from a weak fingerprint
-// formed from potentially incomplete (underspecified) inputs to a set of outputs.
+// The ordered file reads and probes and directory enumerations used to
+// compare to the client filesystem when seeking a match from an action
+// fingerprint formed from potentially incomplete (underspecified) inputs to a
+// set of outputs.
 //
-// When performing a comparison for a Two-Phase Cache lookup, a corresponding
+// When performing a comparison for a two-phase cache lookup, a corresponding
 // prospective strong fingerprint is initialized. Each entry is examined
 // against the filesystem, and depending on the outcome of the comparison,
 // new hash information is added to the prospective strong fingerprint.
